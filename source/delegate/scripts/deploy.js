@@ -1,14 +1,14 @@
 /* eslint-disable no-console */
-const fs = require('fs')
+const fs = require('node:fs')
 const prettier = require('prettier')
-const Confirm = require('prompt-confirm')
+
 const { ethers, run } = require('hardhat')
 const swapERC20Deploys = require('@airswap/swap-erc20/deploys.js')
-const { ChainIds, chainLabels } = require('@airswap/utils')
-const { getReceiptUrl } = require('@airswap/utils')
+const { ChainIds, chainLabels, getReceiptUrl } = require('@airswap/utils')
 const delegateDeploys = require('../deploys.js')
 const delegateBlocks = require('../deploys-blocks.js')
-const { displayDeployerInfo } = require('../../../scripts/deployer-info')
+const delegateCommits = require('../deploys-commits.js')
+const { confirmDeployment } = require('../../../scripts/deployer-info')
 
 async function main() {
   await run('compile')
@@ -19,12 +19,12 @@ async function main() {
     console.log('Value for --network flag is required')
     return
   }
-  await displayDeployerInfo(deployer)
 
-  console.log(`swapERC20Contract: ${swapERC20Deploys[chainId]}\n`)
+  console.log('\nDeploy DELEGATE')
 
-  const prompt = new Confirm('Proceed to deploy?')
-  if (await prompt.run()) {
+  console.log(`· swapERC20Contract  ${swapERC20Deploys[chainId]}\n`)
+
+  if (await confirmDeployment(deployer, delegateDeploys[ChainIds.MAINNET])) {
     const delegateFactory = await ethers.getContractFactory('Delegate')
     const delegateContract = await delegateFactory.deploy(
       swapERC20Deploys[chainId]
@@ -50,6 +50,17 @@ async function main() {
       './deploys-blocks.js',
       prettier.format(
         `module.exports = ${JSON.stringify(delegateBlocks, null, '\t')}`,
+        { ...prettierConfig, parser: 'babel' }
+      )
+    )
+    delegateCommits[chainId] = require('node:child_process')
+      .execSync('git rev-parse HEAD')
+      .toString()
+      .trim()
+    fs.writeFileSync(
+      './deploys-commits.js',
+      prettier.format(
+        `module.exports = ${JSON.stringify(delegateCommits, null, '\t')}`,
         { ...prettierConfig, parser: 'babel' }
       )
     )

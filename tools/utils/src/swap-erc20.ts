@@ -1,24 +1,24 @@
-import lzString from 'lz-string'
-import { ethers } from 'ethers'
-import { toBuffer } from 'ethereumjs-util'
 import {
-  signTypedData,
-  recoverTypedSignature,
   SignTypedDataVersion,
+  recoverTypedSignature,
+  signTypedData,
 } from '@metamask/eth-sig-util'
+import { toBuffer } from 'ethereumjs-util'
+import { ethers } from 'ethers'
+import lzString from 'lz-string'
 
 import { abi as ERC20_ABI } from './abis/ERC20.json'
 const erc20Interface = new ethers.utils.Interface(ERC20_ABI)
 
 import {
-  ChainIds,
-  SECONDS_IN_DAY,
   ADDRESS_ZERO,
-  DOMAIN_VERSION_SWAP_ERC20,
+  ChainIds,
   DOMAIN_NAME_SWAP_ERC20,
+  DOMAIN_VERSION_SWAP_ERC20,
+  SECONDS_IN_DAY,
 } from './constants'
 
-import { Signature, Settlement } from './types'
+import type { Signature, Settlement, Transfer } from './types'
 
 export const EIP712SwapERC20 = {
   EIP712Domain: [
@@ -110,7 +110,7 @@ export async function createOrderERC20Signature(
   version = DOMAIN_VERSION_SWAP_ERC20,
   name = DOMAIN_NAME_SWAP_ERC20
 ): Promise<Signature> {
-  let sig
+  let sig: string
   if (typeof signer === 'string') {
     sig = signTypedData({
       version: SignTypedDataVersion.V4,
@@ -174,36 +174,36 @@ export function getSignerFromOrderERC20Signature(
 export function isValidOrderERC20(order: OrderERC20): boolean {
   return (
     !!order &&
-    typeof order['nonce'] === 'string' &&
-    typeof order['expiry'] === 'string' &&
-    ethers.utils.isAddress(order['signerWallet']) &&
-    ethers.utils.isAddress(order['signerToken']) &&
-    typeof order['signerAmount'] === 'string' &&
-    ethers.utils.isAddress(order['senderToken']) &&
-    typeof order['senderAmount'] === 'string' &&
-    typeof order['v'] === 'string' &&
-    ethers.utils.isBytesLike(order['r']) &&
-    ethers.utils.isBytesLike(order['s'])
+    typeof order.nonce === 'string' &&
+    typeof order.expiry === 'string' &&
+    ethers.utils.isAddress(order.signerWallet) &&
+    ethers.utils.isAddress(order.signerToken) &&
+    typeof order.signerAmount === 'string' &&
+    ethers.utils.isAddress(order.senderToken) &&
+    typeof order.senderAmount === 'string' &&
+    typeof order.v === 'string' &&
+    ethers.utils.isBytesLike(order.r) &&
+    ethers.utils.isBytesLike(order.s)
   )
 }
 
 export function isValidFullOrderERC20(fullOrder: FullOrderERC20): boolean {
   return (
     !!fullOrder &&
-    ethers.utils.isAddress(fullOrder['swapContract']) &&
-    typeof fullOrder['chainId'] === 'number' &&
-    typeof fullOrder['nonce'] === 'string' &&
-    typeof fullOrder['expiry'] === 'string' &&
-    ethers.utils.isAddress(fullOrder['signerWallet']) &&
-    ethers.utils.isAddress(fullOrder['signerToken']) &&
-    typeof fullOrder['signerAmount'] === 'string' &&
-    typeof fullOrder['protocolFee'] === 'string' &&
-    ethers.utils.isAddress(fullOrder['senderWallet']) &&
-    ethers.utils.isAddress(fullOrder['senderToken']) &&
-    typeof fullOrder['senderAmount'] === 'string' &&
-    typeof fullOrder['v'] === 'string' &&
-    ethers.utils.isBytesLike(fullOrder['r']) &&
-    ethers.utils.isBytesLike(fullOrder['s'])
+    ethers.utils.isAddress(fullOrder.swapContract) &&
+    typeof fullOrder.chainId === 'number' &&
+    typeof fullOrder.nonce === 'string' &&
+    typeof fullOrder.expiry === 'string' &&
+    ethers.utils.isAddress(fullOrder.signerWallet) &&
+    ethers.utils.isAddress(fullOrder.signerToken) &&
+    typeof fullOrder.signerAmount === 'string' &&
+    typeof fullOrder.protocolFee === 'string' &&
+    ethers.utils.isAddress(fullOrder.senderWallet) &&
+    ethers.utils.isAddress(fullOrder.senderToken) &&
+    typeof fullOrder.senderAmount === 'string' &&
+    typeof fullOrder.v === 'string' &&
+    ethers.utils.isBytesLike(fullOrder.r) &&
+    ethers.utils.isBytesLike(fullOrder.s)
   )
 }
 
@@ -332,9 +332,9 @@ export function decompressFullOrderERC20(str: string): FullOrderERC20 {
   return paramsToFullOrderERC20(lzString.decompressFromEncodedURIComponent(str))
 }
 
-const parseTransfer = (log: any) => {
-  let parsed
-  let transfer
+const parseTransfer = (log: any): Transfer | null => {
+  let parsed: any
+  let transfer: any
   try {
     parsed = erc20Interface.parseLog(log)
     if (parsed.name === 'Transfer') {
@@ -351,14 +351,60 @@ const parseTransfer = (log: any) => {
   return transfer
 }
 
-export const getFullSwapERC20 = async (
+export const getFullSwapERC20FromTransfers = (
+  nonce: string,
+  signerWallet: string,
+  feeReceiver: string,
+  transfers: Transfer[]
+): FullSwapERC20 => {
+  let feeTransfer: Transfer | null
+  let signerTransfer: Transfer | null
+  let senderTransfer: Transfer | null
+
+  let i = transfers.length
+  while (i--) {
+    if (transfers[i].to === feeReceiver) {
+      feeTransfer = transfers[i]
+    } else {
+      let j = transfers.length
+      while (j--) {
+        if (
+          transfers[i].from === signerWallet.toLowerCase() &&
+          transfers[i].from === transfers[j].to &&
+          transfers[i].to === transfers[j].from
+        ) {
+          signerTransfer = transfers[i]
+          senderTransfer = transfers[j]
+          break
+        }
+      }
+    }
+  }
+
+  if (!signerTransfer || !senderTransfer) {
+    throw new Error('getFullSwapERC20: mutual transfers not found')
+  }
+
+  return {
+    nonce: nonce.toString(),
+    signerWallet: signerTransfer.from,
+    signerToken: signerTransfer.token,
+    signerAmount: signerTransfer.amount.toString(),
+    senderWallet: senderTransfer.from,
+    senderToken: senderTransfer.token,
+    senderAmount: senderTransfer.amount.toString(),
+    feeAmount: (feeTransfer?.amount || 0).toString(),
+  }
+}
+
+export const getFullSwapERC20 = (
   nonce: string,
   signerWallet: string,
   feeReceiver: string,
   logs: ethers.providers.Log[]
-): Promise<FullSwapERC20> => {
-  const transfers = []
-  let transfer: any
+): FullSwapERC20 => {
+  const allTransfers: Transfer[] = []
+  let transfer: Transfer | null
   let length = logs.length
 
   feeReceiver = feeReceiver.toLowerCase()
@@ -366,46 +412,14 @@ export const getFullSwapERC20 = async (
 
   while (length--) {
     if ((transfer = parseTransfer(logs[length]))) {
-      transfers.push(transfer)
+      allTransfers.push(transfer)
     }
   }
 
-  let fee: any
-  let signer: any
-  let sender: any
-
-  let i = transfers.length
-  while (i--) {
-    if (transfers[i].to === feeReceiver) {
-      fee = transfers[i]
-    } else {
-      let j = transfers.length
-      while (j--) {
-        if (
-          transfers[i].from === signerWallet &&
-          transfers[i].from === transfers[j].to &&
-          transfers[i].to == transfers[j].from
-        ) {
-          signer = transfers[i]
-          sender = transfers[j]
-          break
-        }
-      }
-    }
-  }
-
-  if (!signer || !sender) {
-    throw new Error('getFullSwapERC20: Swap not found')
-  }
-
-  return {
-    nonce: nonce.toString(),
-    signerWallet: signer.from,
-    signerToken: signer.token,
-    signerAmount: signer.amount.toString(),
-    senderWallet: sender.from,
-    senderToken: sender.token,
-    senderAmount: sender.amount.toString(),
-    feeAmount: fee.amount.toString(),
-  }
+  return getFullSwapERC20FromTransfers(
+    nonce,
+    signerWallet,
+    feeReceiver,
+    allTransfers
+  )
 }

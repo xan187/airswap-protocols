@@ -1,64 +1,81 @@
 // SPDX-License-Identifier: MIT
 
-import "@airswap/swap-erc20/contracts/interfaces/ISwapERC20.sol";
-
 pragma solidity 0.8.23;
 
 interface IDelegate {
   struct Rule {
-    address sender;
+    address senderWallet;
     address senderToken;
     uint256 senderAmount;
+    uint256 senderFilledAmount;
     address signerToken;
     uint256 signerAmount;
+    uint256 expiry;
   }
 
-  error InvalidAddress();
-  error InvalidSenderAmount();
-  error InvalidSignerAmount();
-  error ManagerInvalid();
-  error SenderInvalid();
-  error TransferFromFailed();
-
-  event Authorize(address _signatory, address _signer);
-  event DelegateSwap(uint256 _nonce, address _signerWallet);
-  event Revoke(address _tmp, address _signer);
+  event Authorize(address signatory, address signer);
+  event DelegatedSwapFor(
+    address indexed senderWallet,
+    address indexed signerWallet,
+    uint256 indexed nonce
+  );
+  event Revoke(address tmp, address signer);
 
   event SetRule(
-    address _senderWallet,
-    address _senderToken,
-    uint256 _senderAmount,
-    address _signerToken,
-    uint256 _signerAmount
+    address senderWallet,
+    address senderToken,
+    uint256 senderAmount,
+    address signerToken,
+    uint256 signerAmount,
+    uint256 expiry
   );
 
-  event UnsetRule(address _signer, address _signerToken, address _senderToken);
+  event UnsetRule(
+    address senderWallet,
+    address senderToken,
+    address signerToken
+  );
+
+  error AddressInvalid();
+  error RuleExpiredOrDoesNotExist();
+  error SenderAmountInvalid();
+  error SignerAmountInvalid();
+  error SenderInvalid();
+  error ManagerInvalid();
+  error TransferFromFailed();
 
   function setRule(
-    address _sender,
-    address _senderToken,
-    uint256 _senderAmount,
-    address _signerToken,
-    uint256 _signerAmount
+    address senderWallet,
+    address senderToken,
+    uint256 senderAmount,
+    address signerToken,
+    uint256 signerAmount,
+    uint256 expiry
   ) external;
 
   function swap(
-    address _senderWallet,
-    uint256 _nonce,
-    uint256 _expiry,
-    address _signerWallet,
-    address _signerToken,
-    uint256 _signerAmount,
-    address _senderToken,
-    uint256 _senderAmount,
-    uint8 _v,
-    bytes32 _r,
-    bytes32 _s
+    address senderWallet,
+    uint256 nonce,
+    uint256 expiry,
+    address signerWallet,
+    address signerToken,
+    uint256 signerAmount,
+    address senderToken,
+    uint256 senderAmount,
+    uint8 v,
+    bytes32 r,
+    bytes32 s
   ) external;
 
   function unsetRule(
-    address _sender,
-    address _signerToken,
-    address _senderToken
+    address senderWallet,
+    address senderToken,
+    address signerToken
   ) external;
+
+  function authorize(address manager) external;
+
+  function revoke() external;
+
+  function setSwapERC20Contract(address _swapERC20Contract) external;
 }

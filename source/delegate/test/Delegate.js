@@ -9,15 +9,18 @@ const {
   createOrderERC20,
   orderERC20ToParams,
   createOrderERC20Signature,
+  SECONDS_IN_DAY,
 } = require('@airswap/utils')
 const CHAIN_ID = 31337
 const DEFAULT_BALANCE = '100000'
-const DEFAULT_SENDER_AMOUNT = '10000'
+const DEFAULT_SENDER_AMOUNT = '5000'
 const DEFAULT_SIGNER_AMOUNT = '10000'
 const PROTOCOL_FEE = '5'
 const REBATE_SCALE = '10'
 const REBATE_MAX = '100'
 const UPDATE_SWAP_ERC20_ADDRESS = '0x0000000000000000000000000000000000001337'
+const RULE_EXPIRY =
+  Math.round(Date.now() / 1000 + SECONDS_IN_DAY).toString() + 1
 
 describe('Delegate Unit', () => {
   let deployer
@@ -132,12 +135,20 @@ describe('Delegate Unit', () => {
 
   describe('Constructor and admin functions', async () => {
     it('swap ERC20 address is set', async () => {
-      expect(await delegate.swapERC20()).to.equal(swapERC20.address)
+      expect(await delegate.swapERC20Contract()).to.equal(swapERC20.address)
     })
 
     it('sets the swapERC20Contract address', async () => {
       await delegate.setSwapERC20Contract(UPDATE_SWAP_ERC20_ADDRESS)
-      expect(await delegate.swapERC20()).to.equal(UPDATE_SWAP_ERC20_ADDRESS)
+      expect(await delegate.swapERC20Contract()).to.equal(
+        UPDATE_SWAP_ERC20_ADDRESS
+      )
+    })
+
+    it('the swapERC20Contract address cannot be address(0)', async () => {
+      await expect(
+        delegate.setSwapERC20Contract(ADDRESS_ZERO)
+      ).to.be.revertedWith('AddressInvalid')
     })
 
     it('only the owner can set the swapERC20Contract address', async () => {
@@ -157,7 +168,8 @@ describe('Delegate Unit', () => {
             senderToken.address,
             DEFAULT_SENDER_AMOUNT,
             signerToken.address,
-            DEFAULT_SIGNER_AMOUNT
+            DEFAULT_SIGNER_AMOUNT,
+            RULE_EXPIRY
           )
       )
         .to.emit(delegate, 'SetRule')
@@ -166,7 +178,8 @@ describe('Delegate Unit', () => {
           senderToken.address,
           DEFAULT_SENDER_AMOUNT,
           signerToken.address,
-          DEFAULT_SIGNER_AMOUNT
+          DEFAULT_SIGNER_AMOUNT,
+          RULE_EXPIRY
         )
     })
 
@@ -190,7 +203,8 @@ describe('Delegate Unit', () => {
             senderToken.address,
             DEFAULT_SENDER_AMOUNT,
             signerToken.address,
-            DEFAULT_SIGNER_AMOUNT
+            DEFAULT_SIGNER_AMOUNT,
+            RULE_EXPIRY
           )
       )
         .to.emit(delegate, 'SetRule')
@@ -199,8 +213,40 @@ describe('Delegate Unit', () => {
           senderToken.address,
           DEFAULT_SENDER_AMOUNT,
           signerToken.address,
-          DEFAULT_SIGNER_AMOUNT
+          DEFAULT_SIGNER_AMOUNT,
+          RULE_EXPIRY
         )
+    })
+
+    it('an unauthorized manager cannot set a rule', async () => {
+      await delegate.connect(sender).authorize(manager.address)
+      await expect(
+        delegate
+          .connect(signer)
+          .setRule(
+            sender.address,
+            senderToken.address,
+            DEFAULT_SENDER_AMOUNT,
+            signerToken.address,
+            DEFAULT_SIGNER_AMOUNT,
+            RULE_EXPIRY
+          )
+      ).to.be.revertedWith('SenderInvalid')
+    })
+
+    it('a manager cannot set a rule without prior authorization', async () => {
+      await expect(
+        delegate
+          .connect(manager)
+          .setRule(
+            sender.address,
+            senderToken.address,
+            DEFAULT_SENDER_AMOUNT,
+            signerToken.address,
+            DEFAULT_SIGNER_AMOUNT,
+            RULE_EXPIRY
+          )
+      ).to.be.revertedWith('SenderInvalid')
     })
 
     it('a manager can unset a Rule', async () => {
@@ -212,7 +258,8 @@ describe('Delegate Unit', () => {
           senderToken.address,
           DEFAULT_SENDER_AMOUNT,
           signerToken.address,
-          DEFAULT_SIGNER_AMOUNT
+          DEFAULT_SIGNER_AMOUNT,
+          RULE_EXPIRY
         )
 
       await expect(
@@ -224,6 +271,48 @@ describe('Delegate Unit', () => {
         .withArgs(sender.address, senderToken.address, signerToken.address)
     })
 
+    it('an unauthorized manager cannot unset a rule', async () => {
+      await delegate.connect(sender).authorize(manager.address)
+      await delegate
+        .connect(manager)
+        .setRule(
+          sender.address,
+          senderToken.address,
+          DEFAULT_SENDER_AMOUNT,
+          signerToken.address,
+          DEFAULT_SIGNER_AMOUNT,
+          RULE_EXPIRY
+        )
+
+      await expect(
+        delegate
+          .connect(signer)
+          .unsetRule(sender.address, senderToken.address, signerToken.address)
+      ).to.be.revertedWith('SenderInvalid')
+    })
+
+    it('a revoked manager cannot unset a rule', async () => {
+      await delegate.connect(sender).authorize(manager.address)
+      await delegate
+        .connect(manager)
+        .setRule(
+          sender.address,
+          senderToken.address,
+          DEFAULT_SENDER_AMOUNT,
+          signerToken.address,
+          DEFAULT_SIGNER_AMOUNT,
+          RULE_EXPIRY
+        )
+
+      await delegate.connect(sender).revoke()
+
+      await expect(
+        delegate
+          .connect(manager)
+          .unsetRule(sender.address, senderToken.address, signerToken.address)
+      ).to.be.revertedWith('SenderInvalid')
+    })
+
     it('setting a Rule updates the rule balance', async () => {
       await delegate
         .connect(sender)
@@ -232,7 +321,8 @@ describe('Delegate Unit', () => {
           senderToken.address,
           DEFAULT_SENDER_AMOUNT,
           signerToken.address,
-          DEFAULT_SIGNER_AMOUNT
+          DEFAULT_SIGNER_AMOUNT,
+          RULE_EXPIRY
         )
 
       const rule = await delegate.rules(
@@ -252,7 +342,8 @@ describe('Delegate Unit', () => {
           senderToken.address,
           DEFAULT_SENDER_AMOUNT,
           signerToken.address,
-          DEFAULT_SIGNER_AMOUNT
+          DEFAULT_SIGNER_AMOUNT,
+          RULE_EXPIRY
         )
 
       let rule = await delegate.rules(
@@ -302,7 +393,8 @@ describe('Delegate Unit', () => {
           senderToken.address,
           DEFAULT_SENDER_AMOUNT,
           signerToken.address,
-          DEFAULT_SIGNER_AMOUNT
+          DEFAULT_SIGNER_AMOUNT,
+          RULE_EXPIRY
         )
 
       const order = await createSignedOrderERC20({}, signer)
@@ -317,7 +409,7 @@ describe('Delegate Unit', () => {
 
       await expect(
         delegate.connect(signer).swap(sender.address, ...order)
-      ).to.emit(delegate, 'DelegateSwap')
+      ).to.emit(delegate, 'DelegatedSwapFor')
     })
 
     it('successfully swaps with a manager', async () => {
@@ -330,7 +422,8 @@ describe('Delegate Unit', () => {
           senderToken.address,
           DEFAULT_SENDER_AMOUNT,
           signerToken.address,
-          DEFAULT_SIGNER_AMOUNT
+          DEFAULT_SIGNER_AMOUNT,
+          RULE_EXPIRY
         )
 
       const order = await createSignedOrderERC20({}, signer)
@@ -345,7 +438,7 @@ describe('Delegate Unit', () => {
 
       await expect(
         delegate.connect(signer).swap(sender.address, ...order)
-      ).to.emit(delegate, 'DelegateSwap')
+      ).to.emit(delegate, 'DelegatedSwapFor')
     })
 
     it('fails to swap with no rule', async () => {
@@ -363,13 +456,41 @@ describe('Delegate Unit', () => {
         .withArgs(delegate.address)
         .returns(DEFAULT_SIGNER_AMOUNT)
 
-      await expect(delegate.connect(signer).swap(sender.address, ...order)).to
-        .be.reverted
+      await expect(
+        delegate.connect(signer).swap(sender.address, ...order)
+      ).to.be.revertedWith('RuleExpiredOrDoesNotExist')
     })
 
-    it('fails to swap with insufficient remaining sender amount on Rule', async () => {
+    it('fails to swap with a rule expired', async () => {
+      await delegate
+        .connect(sender)
+        .setRule(
+          sender.address,
+          senderToken.address,
+          DEFAULT_SENDER_AMOUNT,
+          signerToken.address,
+          DEFAULT_SIGNER_AMOUNT,
+          Math.round(Date.now() / 1000) - 10
+        )
+
+      const order = await createSignedOrderERC20({}, signer)
+
+      await setUpAllowances(
+        sender.address,
+        DEFAULT_SENDER_AMOUNT,
+        signer.address,
+        DEFAULT_SIGNER_AMOUNT + PROTOCOL_FEE
+      )
+      await setUpBalances(signer.address, sender.address)
+
+      await expect(
+        delegate.connect(signer).swap(sender.address, ...order)
+      ).to.be.revertedWith('RuleExpiredOrDoesNotExist')
+    })
+
+    it('fails to swap with sender amount above rule sender amount', async () => {
       await senderToken.mock.approve
-        .withArgs(delegate.address, DEFAULT_SENDER_AMOUNT - 1)
+        .withArgs(delegate.address, DEFAULT_SENDER_AMOUNT / 2)
         .returns(true)
 
       await delegate
@@ -377,9 +498,10 @@ describe('Delegate Unit', () => {
         .setRule(
           sender.address,
           senderToken.address,
-          DEFAULT_SENDER_AMOUNT - 1,
+          DEFAULT_SENDER_AMOUNT / 2,
           signerToken.address,
-          DEFAULT_SIGNER_AMOUNT - 1
+          DEFAULT_SIGNER_AMOUNT / 2,
+          RULE_EXPIRY
         )
 
       const order = await createSignedOrderERC20({}, signer)
@@ -394,11 +516,52 @@ describe('Delegate Unit', () => {
 
       await signerToken.mock.balanceOf
         .withArgs(signer.address)
-        .returns(DEFAULT_SIGNER_AMOUNT - 1)
+        .returns(DEFAULT_SIGNER_AMOUNT)
 
       await expect(
         delegate.connect(signer).swap(sender.address, ...order)
-      ).to.be.revertedWith('InvalidSenderAmount')
+      ).to.be.revertedWith('SenderAmountInvalid')
+    })
+
+    it('fails to swap with sender amount above remaining rule sender amount', async () => {
+      await senderToken.mock.approve
+        .withArgs(delegate.address, DEFAULT_SENDER_AMOUNT / 2)
+        .returns(true)
+
+      await delegate
+        .connect(sender)
+        .setRule(
+          sender.address,
+          senderToken.address,
+          DEFAULT_SENDER_AMOUNT,
+          signerToken.address,
+          DEFAULT_SIGNER_AMOUNT,
+          RULE_EXPIRY
+        )
+
+      const order = await createSignedOrderERC20({}, signer)
+
+      await setUpAllowances(
+        sender.address,
+        DEFAULT_SENDER_AMOUNT,
+        signer.address,
+        DEFAULT_SIGNER_AMOUNT + PROTOCOL_FEE
+      )
+      await setUpBalances(signer.address, sender.address)
+
+      await signerToken.mock.balanceOf
+        .withArgs(signer.address)
+        .returns(DEFAULT_SIGNER_AMOUNT)
+
+      await expect(
+        delegate.connect(signer).swap(sender.address, ...order)
+      ).to.emit(delegate, 'DelegatedSwapFor')
+
+      const order2 = await createSignedOrderERC20({}, signer)
+
+      await expect(
+        delegate.connect(signer).swap(sender.address, ...order2)
+      ).to.be.revertedWith('SenderAmountInvalid')
     })
 
     it('fails to swap with insufficient signer amount on Rule', async () => {
@@ -413,12 +576,14 @@ describe('Delegate Unit', () => {
           senderToken.address,
           DEFAULT_SENDER_AMOUNT,
           signerToken.address,
-          DEFAULT_SIGNER_AMOUNT
+          DEFAULT_SIGNER_AMOUNT,
+          RULE_EXPIRY
         )
 
       const order = await createSignedOrderERC20(
         {
-          signerAmount: DEFAULT_SIGNER_AMOUNT - 1,
+          senderAmount: DEFAULT_SENDER_AMOUNT,
+          signerAmount: DEFAULT_SIGNER_AMOUNT / 4,
         },
         signer
       )
@@ -437,7 +602,7 @@ describe('Delegate Unit', () => {
 
       await expect(
         delegate.connect(signer).swap(sender.address, ...order)
-      ).to.be.revertedWith('InvalidSignerAmount')
+      ).to.be.revertedWith('SignerAmountInvalid')
     })
   })
 })

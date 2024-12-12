@@ -1,10 +1,10 @@
-import { ethers } from 'ethers'
-import { Registry__factory } from '@airswap/registry/typechain/factories/contracts'
-import registryDeploys from '@airswap/registry/deploys.js'
 import registryBlocks from '@airswap/registry/deploys-blocks.js'
+import registryDeploys from '@airswap/registry/deploys.js'
+import { Registry__factory } from '@airswap/registry/typechain/factories/contracts'
+import type { ethers } from 'ethers'
 
-import { Server } from './Server'
 import { Contract, SwapERC20 } from './Contracts'
+import { Server } from './Server'
 
 class ServerRegistry extends Contract {
   public constructor() {
@@ -17,7 +17,7 @@ class ServerRegistry extends Contract {
     baseToken?: string,
     quoteToken?: string,
     address = registryDeploys[chainId]
-  ): Promise<string[]> {
+  ): Promise<{ staker: string; url: string }[]> {
     const contract = Registry__factory.connect(address, providerOrSigner)
     const protocolStakers: string[] = await contract.getStakersForProtocol(
       protocol
@@ -38,7 +38,13 @@ class ServerRegistry extends Contract {
       })
     )
     const stakers = protocolStakers.filter((_v, index) => results[index])
-    return await contract.getServerURLsForStakers(stakers)
+    const urls = await contract.getServerURLsForStakers(stakers)
+    return urls.map((url, index) => {
+      return {
+        staker: stakers[index],
+        url,
+      }
+    })
   }
   public async getServers(
     providerOrSigner: ethers.providers.Provider | ethers.Signer,
@@ -57,10 +63,11 @@ class ServerRegistry extends Contract {
       address
     )
     const serverPromises = await Promise.allSettled(
-      urls.map((url) => {
+      urls.map(({ url, staker }) => {
         return Server.at(url, {
           chainId,
           swapContract: SwapERC20.addresses[chainId],
+          staker,
         })
       })
     )

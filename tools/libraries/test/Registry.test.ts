@@ -8,13 +8,13 @@ const RegistryABI = require('@airswap/registry/build/contracts/Registry.sol/Regi
 
 const { Registry } = require('../index')
 
-let deployer
-let staker
-let stakingToken
-let baseToken
-let quoteToken
-let registryFactory
-let registry
+let deployer: any
+let staker: any
+let stakingToken: any
+let baseToken: any
+let quoteToken: any
+let registryFactory: any
+let registry: any
 
 const SERVER_URL = 'https://maker.com/xyz'
 const STAKING_COST = 1000
@@ -72,7 +72,10 @@ describe('Registry', async () => {
       registry.address
     )
     expect(servers.length).to.be.equal(1)
-    expect(servers[0]).to.be.equal(SERVER_URL)
+    expect(servers[0]).to.be.deep.equal({
+      url: SERVER_URL,
+      staker: staker.address,
+    })
   })
 
   it('get URLs: none for incorrect protocol', async () => {
